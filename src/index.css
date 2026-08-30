@@ -1,0 +1,110 @@
+/*
+ * Committed dark theme. This is a game played in a room with other people looking at the screen,
+ * so it's designed dark-first rather than following the OS: high contrast type on a near-black
+ * ground, one green accent doing all the emphasis work.
+ */
+:root {
+  --text: #f4f6f8;
+  --text-muted: #8b93a1;
+  --text-dim: #5f6775;
+
+  --bg: #07080b;
+  --bg-elevated: #0e1015;
+  --surface: rgba(22, 25, 32, 0.86);
+  --surface-solid: #161920;
+  --surface-hover: rgba(38, 43, 54, 0.9);
+
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
+
+  --accent: #1ed760;
+  --accent-deep: #12b34c;
+  --accent-soft: rgba(30, 215, 96, 0.14);
+  --accent-contrast: #04170b;
+
+  --danger: #ff6b6b;
+  --danger-bg: rgba(255, 107, 107, 0.1);
+
+  --radius: 18px;
+  --radius-sm: 12px;
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --shadow-accent: 0 10px 30px rgba(30, 215, 96, 0.28);
+
+  --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  font: 16px/1.55 var(--sans);
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100svh;
+  background:
+    radial-gradient(900px 600px at 12% -10%, rgba(30, 215, 96, 0.14), transparent 60%),
+    radial-gradient(700px 500px at 92% 4%, rgba(88, 101, 242, 0.12), transparent 62%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+#root {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 700;
+  letter-spacing: -0.022em;
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(26px, 5vw, 38px);
+  line-height: 1.15;
+}
+
+h2 {
+  font-size: 20px;
+}
+
+p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+strong {
+  color: var(--text);
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
