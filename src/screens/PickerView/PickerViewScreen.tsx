@@ -77,7 +77,7 @@ export function PickerViewScreen() {
             <Button onClick={confirmPick}>Lock it in</Button>
             <div className="row">
               <Button variant="secondary" onClick={rollRandom}>
-                🎲 Pick another
+                {'🎲 '}Pick another
               </Button>
               <Button variant="secondary" onClick={clearSelection}>
                 Choose myself
@@ -88,7 +88,7 @@ export function PickerViewScreen() {
           <>
             <div className="row">
               <Button variant="secondary" onClick={rollRandom}>
-                🎲 Let the game pick
+                {'🎲 '}Let the game pick
               </Button>
             </div>
 

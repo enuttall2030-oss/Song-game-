@@ -1,9 +1,14 @@
 /**
- * Synthesizes a short mono PCM WAV tone entirely locally (no network) and returns it as a data URI,
- * so dev/demo mode has real playable audio to exercise the snippet-timing engine against without
- * needing a live Spotify preview URL.
+ * Synthesizes a short mono PCM WAV tone entirely locally (no network) and returns a blob: URL for
+ * it, so dev/demo mode has real playable audio to exercise the snippet-timing engine against
+ * without needing a live Spotify preview URL.
+ *
+ * A blob URL, not a data URI: 20s of 22kHz PCM is ~880KB, and base64-encoding that into a data URI
+ * produces a ~1.2MB string that Chrome will not decode for a media element at all (readyState
+ * stays 0, no `loadedmetadata`, no `error` — the clip just never loads). The same bytes behind a
+ * blob URL load instantly, and keep match state small enough to still fit in sessionStorage.
  */
-export function generateToneDataUri(durationSec: number, freqHz: number, sampleRate = 22050): string {
+export function generateToneObjectUrl(durationSec: number, freqHz: number, sampleRate = 22050): string {
   const numSamples = Math.floor(durationSec * sampleRate);
   const blockAlign = 2; // 16-bit mono
   const dataSize = numSamples * blockAlign;
@@ -32,10 +37,7 @@ export function generateToneDataUri(durationSec: number, freqHz: number, sampleR
     view.setInt16(44 + i * blockAlign, Math.max(-1, Math.min(1, sample)) * 0x7fff, true);
   }
 
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-  return `data:audio/wav;base64,${btoa(binary)}`;
+  return URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' }));
 }
 
 function writeString(view: DataView, offset: number, text: string): void {

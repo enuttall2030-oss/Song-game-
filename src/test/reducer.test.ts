@@ -358,15 +358,33 @@ describe('sudden death', () => {
   it('runs another cycle when the tie-break is itself tied', () => {
     let state = tiedMatch({ P1: 10, P2: 10 }, ['P1', 'P2']);
 
+    // Both players get their song, so the cycle scored but settled nothing: worth replaying,
+    // because the players are demonstrably still able to break it.
+    for (const slot of ['P1', 'P2'] as PlayerSlot[]) {
+      const track = state.playlists[slot]![2];
+      state = gameReducer(state, { type: 'SUDDEN_DEATH_TRACK_SELECTED', track });
+      state = gameReducer(state, { type: 'GUESSER_GUESS_SUBMITTED', guessText: track.title });
+    }
+
+    // Still level, so a fresh cycle is queued rather than declaring a draw.
+    expect(state.phase).toEqual({ name: 'suddenDeath' });
+    expect(state.suddenDeathQueue).toEqual(['P1', 'P2']);
+  });
+
+  it('lets the tie stand once a whole cycle passes with nobody scoring', () => {
+    // A cycle where everyone missed leaves the standings identical, so another cycle can only
+    // replay it — the match used to become unfinishable, with no exit but closing the tab.
+    let state = tiedMatch({ P1: 10, P2: 10 }, ['P1', 'P2']);
+
     for (const slot of ['P1', 'P2'] as PlayerSlot[]) {
       const track = state.playlists[slot]![2];
       state = gameReducer(state, { type: 'SUDDEN_DEATH_TRACK_SELECTED', track });
       state = gameReducer(state, { type: 'GUESSER_GAVE_UP' }); // 0 points either way
     }
 
-    // Still level, so a fresh cycle is queued rather than declaring a draw.
-    expect(state.phase).toEqual({ name: 'suddenDeath' });
-    expect(state.suddenDeathQueue).toEqual(['P1', 'P2']);
+    expect(state.phase).toEqual({ name: 'finalResults' });
+    expect(state.suddenDeathQueue).toEqual([]);
+    expect(state.scores.P1).toBe(state.scores.P2);
   });
 
   it('only calls up the players tied for the lead', () => {

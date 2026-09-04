@@ -324,13 +324,36 @@ function allMatchTracks(state: GameState) {
 }
 
 /**
+ * Did anyone score in the most recent tie-break cycle? The cycle is the tail of
+ * `suddenDeathRounds` up to (not including) the point a guesser repeats, since every tied player
+ * gets exactly one round per cycle.
+ */
+function lastSuddenDeathCycleScored(state: GameState): boolean {
+  const seen = new Set<PlayerSlot>();
+  for (let i = state.suddenDeathRounds.length - 1; i >= 0; i--) {
+    const round = state.suddenDeathRounds[i];
+    if (seen.has(round.guesser)) break;
+    seen.add(round.guesser);
+    if (round.outcome === 'correct') return true;
+  }
+  return false;
+}
+
+/**
  * The match is over: hand it to sudden death if the *lead* is shared, otherwise final results.
  * Every tied leader gets a sudden-death round before the tie is judged again.
+ *
+ * A cycle in which nobody scored leaves the standings byte-for-byte where they were, so starting
+ * another one replays the same situation — forever, with no exit from the app but closing the tab.
+ * When a whole cycle passes with every tied player missing, the tie is allowed to stand.
  */
 function endOfMatchPhase(state: GameState): Pick<GameState, 'phase' | 'suddenDeathQueue'> {
   const slots = matchSlots(state);
   if (isTied(state.scores, slots)) {
-    return { phase: { name: 'suddenDeath' }, suddenDeathQueue: leaders(state.scores, slots) };
+    const cycleWasFutile = state.suddenDeathRounds.length > 0 && !lastSuddenDeathCycleScored(state);
+    if (!cycleWasFutile) {
+      return { phase: { name: 'suddenDeath' }, suddenDeathQueue: leaders(state.scores, slots) };
+    }
   }
   return { phase: { name: 'finalResults' }, suddenDeathQueue: [] };
 }

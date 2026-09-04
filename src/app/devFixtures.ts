@@ -1,5 +1,5 @@
 import type { GameTrack } from '../game/types';
-import { generateToneDataUri } from '../utils/generateToneWav';
+import { generateToneObjectUrl } from '../utils/generateToneWav';
 
 const SONG_NAMES = [
   'Midnight Static',
@@ -20,6 +20,11 @@ const SONG_NAMES = [
  * Locally-generated fixture playlists for dev/demo use, so the full turn loop (including real
  * audio playback timing) can be exercised in a browser without a live Spotify OAuth round trip.
  * Never shown outside `import.meta.env.DEV`.
+ *
+ * One dev-only wrinkle: these preview URLs are blob URLs, which belong to the document that
+ * created them, so a persisted fixture match resumed after a page reload has dead audio. Real
+ * matches are unaffected — Apple's preview URLs are ordinary https ones that survive the OAuth
+ * redirect, which is the only full-page navigation a real match makes.
  */
 export function buildFixturePlaylist(seedPrefix: string): GameTrack[] {
   return SONG_NAMES.map((name, i) => ({
@@ -27,7 +32,7 @@ export function buildFixturePlaylist(seedPrefix: string): GameTrack[] {
     title: `${name} (${seedPrefix})`,
     artist: `${seedPrefix}'s Band`,
     albumArtUrl: '',
-    previewUrl: generateToneDataUri(20, 220 + i * 15),
+    previewUrl: generateToneObjectUrl(20, 220 + i * 15),
     popularity: 30 + i * 5,
   }));
 }

@@ -49,6 +49,8 @@ export function GuesserViewScreen() {
     );
   }
 
+  const clipReady = round.snippetStartOffsetSec !== undefined;
+
   const play = () => {
     if (round.snippetStartOffsetSec === undefined) return;
     playSnippet(round.snippetStartOffsetSec, snippetLengthForAttempt(currentAttempt));
@@ -73,8 +75,10 @@ export function GuesserViewScreen() {
 
         <SnippetProgressIndicator currentAttempt={currentAttempt} />
 
-        <Button onClick={play} disabled={isPlaying || round.snippetStartOffsetSec === undefined}>
-          {isPlaying ? 'Playing…' : '▶ Play snippet'}
+        {/* The offset can only be chosen once the clip's real duration is known, so Play is dead
+            until then — say so rather than showing a greyed button with no explanation. */}
+        <Button onClick={play} disabled={isPlaying || !clipReady}>
+          {isPlaying ? 'Playing…' : clipReady ? '▶ Play snippet' : 'Loading clip…'}
         </Button>
 
         {loadError && <p style={{ color: 'var(--danger)' }}>{loadError}</p>}

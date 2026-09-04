@@ -23,7 +23,11 @@ export function ScoreBreakdownTable({
             <tr key={round.roundNumber} style={{ borderBottom: '1px solid var(--border)' }}>
               <td>{round.roundNumber}</td>
               <td>{players[round.guesser]?.displayName}</td>
-              <td>{round.outcome === 'correct' ? `Correct (${round.attemptsUsed} attempts)` : 'Missed'}</td>
+              <td>
+                {round.outcome === 'correct'
+                  ? `Correct (${round.attemptsUsed} attempt${round.attemptsUsed === 1 ? '' : 's'})`
+                  : 'Missed'}
+              </td>
               <td>
                 {round.pointsAwardedToGuesser > 0 && `+${round.pointsAwardedToGuesser} guesser`}
                 {round.pointsAwardedToPicker > 0 && ` +${round.pointsAwardedToPicker} picker`}

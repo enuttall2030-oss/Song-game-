@@ -43,17 +43,29 @@ export function tracksForActiveRound(state: GameState): GameTrack[] {
 }
 
 /**
+ * Drops songs already used this match, but never returns an empty list while the playlist has any
+ * songs at all. A match can be deeper than the playlists are: 20 rounds per player against a
+ * 10-song minimum exhausts the pool long before the last round. Every caller here feeds a random
+ * draw whose empty result would leave a screen waiting for a song that can never arrive, so
+ * allowing a repeat once everything has been heard is the only non-dead-end answer.
+ */
+function unusedOrAll(pool: GameTrack[], usedTrackIds: ReadonlySet<string>): GameTrack[] {
+  const unused = pool.filter((t) => !usedTrackIds.has(t.id));
+  return unused.length > 0 ? unused : pool;
+}
+
+/**
  * What the Picker can choose from right now: the playlist of whoever they're picking *for*, minus
  * anything already used this match — including songs chosen moments ago in this same block, so a
  * block can never contain a duplicate.
  */
 export function selectablePickerTracks(state: GameState): GameTrack[] {
   if (state.phase.name !== 'pickBatch') {
-    return tracksForActiveRound(state).filter((t) => !state.usedTrackIds.has(t.id));
+    return unusedOrAll(tracksForActiveRound(state), state.usedTrackIds);
   }
   const target = nextPickTarget(state);
   const pool = target ? (state.playlists[target.guesser] ?? []) : [];
-  return pool.filter((t) => !state.usedTrackIds.has(t.id));
+  return unusedOrAll(pool, state.usedTrackIds);
 }
 
 /** The round the Picker's next song will be played in. */
@@ -108,14 +120,14 @@ export function isMatchOver(state: GameState): boolean {
   return state.currentRoundIndex >= state.rounds.length;
 }
 
-/** Unused songs from every playlist — the pool sudden death and solo rounds draw from. */
+/** Unused songs from every playlist — the pool sudden death draws from. */
 export function combinedUnusedPool(state: GameState): GameTrack[] {
-  return allMatchTracks(state).filter((t) => !state.usedTrackIds.has(t.id));
+  return unusedOrAll(allMatchTracks(state), state.usedTrackIds);
 }
 
 /** The solo player draws from their own playlist; nobody else is here to pick for them. */
 export function soloUnusedPool(state: GameState): GameTrack[] {
-  return (state.playlists.P1 ?? []).filter((t) => !state.usedTrackIds.has(t.id));
+  return unusedOrAll(state.playlists.P1 ?? [], state.usedTrackIds);
 }
 
 export interface Standing {

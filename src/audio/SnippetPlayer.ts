@@ -8,9 +8,13 @@ export class SnippetPlayer {
   private readonly audio: HTMLAudioElement;
   private rafHandle: number | null = null;
   private metadataPromise: Promise<number> | null = null;
+  /** Detaches the in-flight metadata listeners, while a metadata load is pending. */
+  private detachMetadataListeners: (() => void) | null = null;
+  private disposed = false;
 
-  constructor(previewUrl: string) {
-    this.audio = new Audio(previewUrl);
+  /** `audio` is injectable so tests can drive load/error events without a real media pipeline. */
+  constructor(previewUrl: string, audio: HTMLAudioElement = new Audio(previewUrl)) {
+    this.audio = audio;
     this.audio.preload = 'auto';
   }
 
@@ -32,9 +36,11 @@ export class SnippetPlayer {
         reject(new Error('Failed to load audio preview.'));
       };
       const cleanup = () => {
+        this.detachMetadataListeners = null;
         this.audio.removeEventListener('loadedmetadata', onLoaded);
         this.audio.removeEventListener('error', onError);
       };
+      this.detachMetadataListeners = cleanup;
       this.audio.addEventListener('loadedmetadata', onLoaded);
       this.audio.addEventListener('error', onError);
       this.audio.load();
@@ -76,8 +82,19 @@ export class SnippetPlayer {
     this.stopPlayback();
   }
 
+  /** True once `dispose` has run: this player is retired and its results must be ignored. */
+  get isDisposed(): boolean {
+    return this.disposed;
+  }
+
   dispose(): void {
+    this.disposed = true;
     this.stop();
+    // Detach the metadata listeners *before* clearing `src`. Clearing it makes the browser fire a
+    // synthetic `error` ("MEDIA_ELEMENT_ERROR: Empty src attribute"), which would otherwise reject
+    // the in-flight metadata promise — surfacing "Failed to load audio preview." over a clip that
+    // was loading perfectly well, on every track change and on every dev StrictMode remount.
+    this.detachMetadataListeners?.();
     this.audio.src = '';
   }
 }

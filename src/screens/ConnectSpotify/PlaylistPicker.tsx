@@ -3,7 +3,7 @@ import { useAppState } from '../../app/AppStateProvider';
 import { Button } from '../../components/Button';
 import { Card } from '../../components/Card';
 import { ErrorBanner } from '../../components/ErrorBanner';
-import type { PlayerSlot } from '../../game/types';
+import { slotIndex, type PlayerSlot } from '../../game/types';
 import { resolvePreviewsForTracks } from '../../preview/resolvePreviews';
 import { fetchPlaylistsForSlot, fetchPlaylistTracksForSlot } from '../../spotify/playlistData';
 import type { SpotifyPlaylistSummary } from '../../spotify/types';
@@ -66,7 +66,10 @@ export function PlaylistPicker({ slot }: { slot: PlayerSlot }) {
   return (
     <div className="screen">
       <h1>Pick a playlist</h1>
-      <p>Player {slot === 'P1' ? '1' : '2'}: choose the playlist your opponent will guess from.</p>
+      <p>
+        Player {slotIndex(slot) + 1}: choose the playlist you'll be guessing from. Someone else
+        picks the songs out of it — you'll never see which.
+      </p>
 
       {state.errorMessage && <ErrorBanner message={state.errorMessage} />}
 
