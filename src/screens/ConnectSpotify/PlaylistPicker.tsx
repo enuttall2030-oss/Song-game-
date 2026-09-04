@@ -15,7 +15,7 @@ export function PlaylistPicker({ slot }: { slot: PlayerSlot }) {
   const [status, setStatus] = useState<Status>('loadingPlaylists');
   const [playlists, setPlaylists] = useState<SpotifyPlaylistSummary[]>([]);
   const [scanningName, setScanningName] = useState('');
-  const [scanProgress, setScanProgress] = useState({ done: 0, total: 0 });
+  const [scanProgress, setScanProgress] = useState({ checked: 0, total: 0, matched: 0, target: 0 });
   const [errorMessage, setErrorMessage] = useState('');
 
   const loadPlaylists = () => {
@@ -35,19 +35,28 @@ export function PlaylistPicker({ slot }: { slot: PlayerSlot }) {
 
   const selectPlaylist = async (playlist: SpotifyPlaylistSummary) => {
     setScanningName(playlist.name);
-    setScanProgress({ done: 0, total: 0 });
+    setScanProgress({ checked: 0, total: 0, matched: 0, target: 0 });
     setStatus('scanningTracks');
     try {
       const spotifyTracks = await fetchPlaylistTracksForSlot(slot, playlist.id);
       // Spotify tells us what's in the playlist; Apple supplies the audio clips. This is the slow
       // step (one throttled lookup per sampled track), hence the running progress count.
       const resolution = await resolvePreviewsForTracks(spotifyTracks, {
-        onProgress: (done, total) => setScanProgress({ done, total }),
+        targetMatches: state.settings.minPlayableTracks + 5,
+        onProgress: setScanProgress,
       });
 
-      if (resolution.rateLimited && resolution.matched < state.settings.minPlayableTracks) {
+      // Distinguish "Apple wouldn't answer us" from "this playlist really has few playable
+      // songs". Both used to arrive as a low match count and got reported as the latter, which
+      // sent people hunting for a better playlist over a problem no playlist could fix.
+      const shortOfMinimum = resolution.matched < state.settings.minPlayableTracks;
+      const lookupsMostlyFailed = resolution.failed > resolution.attempted / 2;
+
+      if (shortOfMinimum && (resolution.rateLimited || lookupsMostlyFailed)) {
         setErrorMessage(
-          `Apple's preview search throttled us part-way through "${playlist.name}" (only ${resolution.matched} clips found). Wait a minute, then pick the playlist again — already-found clips are cached, so the retry is quicker.`,
+          resolution.rateLimited
+            ? `Apple's preview search rate-limited us part-way through "${playlist.name}" — ${resolution.matched} clips found, and it needs ${state.settings.minPlayableTracks}. That's Apple throttling our lookups, not a problem with your playlist. Wait a minute or two and pick the same playlist again: every clip already found is cached, so the retry picks up where this left off.`
+            : `Couldn't reach Apple's preview search for "${playlist.name}" (${resolution.failed} of ${resolution.attempted} lookups failed). Check your internet connection and try the same playlist again — this isn't a problem with the playlist itself.`,
         );
         setStatus('error');
         return;
@@ -78,7 +87,12 @@ export function PlaylistPicker({ slot }: { slot: PlayerSlot }) {
         {status === 'scanningTracks' && (
           <p>
             Finding playable clips for "{scanningName}"…
-            {scanProgress.total > 0 && ` ${scanProgress.done} / ${scanProgress.total} checked`}
+            {scanProgress.target > 0 && ` found ${scanProgress.matched} of ${scanProgress.target}`}
+            <br />
+            <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+              Apple only allows about 20 lookups a minute, so a new playlist takes up to a minute.
+              Picking it again later is instant.
+            </span>
           </p>
         )}
         {status === 'error' && <ErrorBanner message={errorMessage} />}

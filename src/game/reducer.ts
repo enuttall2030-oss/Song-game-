@@ -149,7 +149,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       if (!meetsMinimum) {
         return {
           ...state,
-          errorMessage: `Only ${playableTracks.length} of the ${action.tracks.length} tracks checked in this playlist have a matching preview clip — need at least ${state.settings.minPlayableTracks}. Pick a different playlist.`,
+          errorMessage: `Only ${playableTracks.length} of the ${action.tracks.length} tracks checked in this playlist have a matching preview clip — need at least ${state.settings.minPlayableTracks}. Try picking this playlist again (clips already found are cached), or choose a more mainstream one — Apple's catalogue is missing some regional and very obscure releases.`,
         };
       }
 

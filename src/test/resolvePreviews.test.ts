@@ -9,6 +9,12 @@ function track(id: string): GameTrack {
 
 const tracks = (count: number) => Array.from({ length: count }, (_, i) => track(String(i)));
 
+/**
+ * The production pacing gate spaces requests ~3.2s apart to stay under Apple's per-IP limit, so
+ * every test that resolves previews injects this instead of waiting minutes for real time.
+ */
+const noPacing = { acquireSlot: async () => {} };
+
 beforeEach(() => {
   localStorage.clear();
 });
@@ -32,7 +38,7 @@ describe('sampleTracks', () => {
 describe('resolvePreviewsForTracks', () => {
   it('fills in preview urls and reports how many matched', async () => {
     const lookup = vi.fn(async (title: string) => (title === 'Song 1' ? undefined : `https://a/${title}`));
-    const result = await resolvePreviewsForTracks(tracks(3), { lookup, concurrency: 2 });
+    const result = await resolvePreviewsForTracks(tracks(3), { lookup, concurrency: 2, ...noPacing });
 
     expect(result.attempted).toBe(3);
     expect(result.matched).toBe(2);
@@ -41,11 +47,16 @@ describe('resolvePreviewsForTracks', () => {
     expect(result.tracks.find((t) => t.id === '0')?.previewUrl).toBe('https://a/Song 0');
   });
 
-  it('reports progress up to the sample size', async () => {
+  it('reports progress as playable clips are found', async () => {
     const onProgress = vi.fn();
-    await resolvePreviewsForTracks(tracks(4), { lookup: async () => 'https://a/x', concurrency: 1, onProgress });
-    expect(onProgress).toHaveBeenCalledWith(0, 4);
-    expect(onProgress).toHaveBeenLastCalledWith(4, 4);
+    await resolvePreviewsForTracks(tracks(4), {
+      lookup: async () => 'https://a/x',
+      concurrency: 1,
+      onProgress,
+      ...noPacing,
+    });
+    expect(onProgress).toHaveBeenCalledWith({ checked: 0, total: 4, matched: 0, target: 15 });
+    expect(onProgress).toHaveBeenLastCalledWith({ checked: 4, total: 4, matched: 4, target: 15 });
   });
 
   it('keeps scanning when individual lookups fail, and flags throttling', async () => {
@@ -54,7 +65,7 @@ describe('resolvePreviewsForTracks', () => {
       if (title === 'Song 1') throw new Error('network');
       return 'https://a/ok';
     });
-    const result = await resolvePreviewsForTracks(tracks(3), { lookup, concurrency: 1 });
+    const result = await resolvePreviewsForTracks(tracks(3), { lookup, concurrency: 1, ...noPacing });
 
     expect(result.matched).toBe(1);
     expect(result.rateLimited).toBe(true);
@@ -70,16 +81,16 @@ describe('resolvePreviewsForTracks', () => {
       inFlight--;
       return 'https://a/x';
     };
-    await resolvePreviewsForTracks(tracks(20), { lookup, concurrency: 4 });
+    await resolvePreviewsForTracks(tracks(20), { lookup, concurrency: 4, targetMatches: 100, ...noPacing });
     expect(peak).toBeLessThanOrEqual(4);
   });
 
   it('reuses cached hits and cached misses instead of looking up again', async () => {
     const lookup = vi.fn(async (title: string) => (title === 'Song 1' ? undefined : `https://a/${title}`));
-    await resolvePreviewsForTracks(tracks(2), { lookup });
+    await resolvePreviewsForTracks(tracks(2), { lookup, ...noPacing });
     expect(lookup).toHaveBeenCalledTimes(2);
 
-    const second = await resolvePreviewsForTracks(tracks(2), { lookup });
+    const second = await resolvePreviewsForTracks(tracks(2), { lookup, ...noPacing });
     expect(lookup).toHaveBeenCalledTimes(2); // no further network work
     expect(second.matched).toBe(1);
     expect(second.tracks.find((t) => t.id === '0')?.previewUrl).toBe('https://a/Song 0');
@@ -124,6 +135,7 @@ describe('sampling is random and re-drawn every pick', () => {
       const result = await resolvePreviewsForTracks(playlist, {
         sampleSize: 60,
         lookup: async () => 'https://a/x',
+        ...noPacing,
       });
       seenPerRun.push(result.tracks.map((t) => t.id).sort());
     }

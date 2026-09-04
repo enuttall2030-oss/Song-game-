@@ -107,14 +107,14 @@ describe('fetchItunesPreviewUrl', () => {
     await expect(fetchItunesPreviewUrl('Obscure Demo', 'Nobody', { fetchImpl })).resolves.toBeUndefined();
   });
 
-  it('retries once on a 429 and flags rate limiting when it persists', async () => {
+  it('retries a 429 with backoff and flags rate limiting when it persists', async () => {
     const fetchImpl = vi.fn(async () => failResponse(429));
     const delay = vi.fn(async () => {});
     const error = await fetchItunesPreviewUrl('Halo', 'Beyoncé', { fetchImpl, delay }).catch((e: Error) => e);
     expect(error).toBeInstanceOf(ItunesLookupError);
     expect((error as ItunesLookupError).rateLimited).toBe(true);
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
-    expect(delay).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(delay).toHaveBeenCalledTimes(2);
   });
 
   it('succeeds on the retry after a transient 503', async () => {
@@ -126,8 +126,29 @@ describe('fetchItunesPreviewUrl', () => {
     expect(url).toBe('https://a/halo');
   });
 
-  it('does not retry a non-throttling client error', async () => {
+  // Apple answers a breached rate limit with 403, not 429. Treating 403 as an ordinary client
+  // error meant a throttled scan reported every track as having no preview, so the user was told
+  // their playlist was unplayable and to pick a different one — which just re-triggered it.
+  it('treats a 403 as throttling: retries it and flags rate limiting', async () => {
     const fetchImpl = vi.fn(async () => failResponse(403));
+    const delay = vi.fn(async () => {});
+    const error = await fetchItunesPreviewUrl('Halo', 'Beyoncé', { fetchImpl, delay }).catch((e: Error) => e);
+    expect(error).toBeInstanceOf(ItunesLookupError);
+    expect((error as ItunesLookupError).rateLimited).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it('recovers when a 403 clears on a retry', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(failResponse(403))
+      .mockResolvedValueOnce(okResponse([result('Halo', 'Beyoncé', 'https://a/halo')]));
+    const url = await fetchItunesPreviewUrl('Halo', 'Beyoncé', { fetchImpl, delay: async () => {} });
+    expect(url).toBe('https://a/halo');
+  });
+
+  it('does not retry a genuine client error like 404', async () => {
+    const fetchImpl = vi.fn(async () => failResponse(404));
     const error = await fetchItunesPreviewUrl('Halo', 'Beyoncé', { fetchImpl, delay: async () => {} }).catch(
       (e: Error) => e,
     );

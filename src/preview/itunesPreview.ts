@@ -155,10 +155,21 @@ export interface FetchPreviewOptions {
 const defaultDelay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Apple answers a breached rate limit with **403 Forbidden**, not the 429 you would expect — a
+ * burst of lookups comes back as a wall of 403s. Treating 403 as a plain client error meant those
+ * were reported as "this track has no preview", so a throttled scan looked exactly like a playlist
+ * full of unavailable songs and the user was told to pick a different one.
+ */
+const THROTTLE_STATUSES = new Set([403, 429]);
+
+/** Backoff between attempts. Apple's window is per-minute, so the last wait is a long one. */
+const RETRY_DELAYS_MS = [1_500, 6_000];
+
+/**
  * Looks up one track's 30s preview clip. Apple's Search API is CORS-open and unauthenticated, so
- * this works from the browser with no backend — but it is rate limited, so a 429/5xx gets one
- * backed-off retry and then surfaces as a `rateLimited` error the caller can report as such
- * (silently reporting "no preview found" for a throttled lookup would be a lie).
+ * this works from the browser with no backend — but it is rate limited, so a throttled or 5xx
+ * response is retried with backoff and then surfaces as a `rateLimited` error the caller can
+ * report as such (silently reporting "no preview found" for a throttled lookup would be a lie).
  */
 export async function fetchItunesPreviewUrl(
   title: string,
@@ -174,8 +185,8 @@ export async function fetchItunesPreviewUrl(
   const url = `${SEARCH_URL}?${params.toString()}`;
 
   let lastStatus = 0;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt > 0) await delay(1_500);
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+    if (attempt > 0) await delay(RETRY_DELAYS_MS[attempt - 1]);
 
     let response: Response;
     try {
@@ -191,11 +202,12 @@ export async function fetchItunesPreviewUrl(
     }
 
     lastStatus = response.status;
-    if (response.status !== 429 && response.status < 500) break;
+    // Retry a throttle or a server hiccup; anything else is a real answer about this track.
+    if (!THROTTLE_STATUSES.has(response.status) && response.status < 500) break;
   }
 
   throw new ItunesLookupError(
     `Apple preview lookup failed for "${title}" (${lastStatus || 'network error'}).`,
-    lastStatus === 429,
+    THROTTLE_STATUSES.has(lastStatus),
   );
 }
