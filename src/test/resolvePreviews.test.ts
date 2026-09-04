@@ -13,7 +13,7 @@ const tracks = (count: number) => Array.from({ length: count }, (_, i) => track(
  * The production pacing gate spaces requests ~3.2s apart to stay under Apple's per-IP limit, so
  * every test that resolves previews injects this instead of waiting minutes for real time.
  */
-const noPacing = { acquireSlot: async () => {} };
+const noPacing = { limiter: { acquire: async () => {}, slowDown: () => {} } };
 
 beforeEach(() => {
   localStorage.clear();

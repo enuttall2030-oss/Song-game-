@@ -90,8 +90,8 @@ export function PlaylistPicker({ slot }: { slot: PlayerSlot }) {
             {scanProgress.target > 0 && ` found ${scanProgress.matched} of ${scanProgress.target}`}
             <br />
             <span style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-              Apple only allows about 20 lookups a minute, so a new playlist takes up to a minute.
-              Picking it again later is instant.
+              Usually a few seconds. If Apple rate-limits us it slows right down to get through —
+              either way, picking this playlist again later is instant.
             </span>
           </p>
         )}

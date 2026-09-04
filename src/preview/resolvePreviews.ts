@@ -1,7 +1,7 @@
 import type { GameTrack } from '../game/types';
 import { ItunesLookupError, fetchItunesPreviewUrl } from './itunesPreview';
 import { readCachedPreview, writeCachedPreview } from './previewCache';
-import { ITUNES_MIN_REQUEST_INTERVAL_MS, createRateLimiter } from './rateLimiter';
+import { createAdaptiveRateLimiter } from './rateLimiter';
 
 /**
  * The most of a playlist's tracks we are willing to look up. Apple's Search API is rate limited,
@@ -51,8 +51,11 @@ export interface ResolvePreviewsOptions {
   onProgress?: (progress: PreviewProgress) => void;
   rng?: () => number;
   lookup?: (title: string, artist: string) => Promise<string | undefined>;
-  /** Injected in tests so pacing doesn't make the suite take minutes. */
-  acquireSlot?: () => Promise<void>;
+  /**
+   * Pacing gate. Defaults to one that runs unthrottled until Apple objects, then slows down;
+   * tests inject a no-op so a backed-off scan doesn't make the suite take minutes.
+   */
+  limiter?: { acquire: () => Promise<void>; slowDown: () => void };
 }
 
 /** Fisher-Yates over a copy, so playlist order never biases which tracks get looked up. */
@@ -89,8 +92,9 @@ async function runPool<T>(
  * gets filtered out downstream by `filterPlayableTracks`.
  *
  * Cached tracks are swept first and cost nothing, so re-picking a playlist is close to instant;
- * only the unknown ones go to the network, paced to stay under Apple's per-IP limit, and only
- * until there are enough playable songs to fill a match.
+ * only the unknown ones go to the network, and only until there are enough playable songs to fill
+ * a match. Those lookups run at full speed and drop to a paced crawl the moment Apple throttles
+ * one, so the common case stays quick and the throttled case still finishes.
  */
 export async function resolvePreviewsForTracks(
   tracks: GameTrack[],
@@ -103,7 +107,7 @@ export async function resolvePreviewsForTracks(
     onProgress,
     rng,
     lookup = (title, artist) => fetchItunesPreviewUrl(title, artist),
-    acquireSlot = createRateLimiter(ITUNES_MIN_REQUEST_INTERVAL_MS),
+    limiter = createAdaptiveRateLimiter(),
   } = options;
 
   const sampled = sampleTracks(tracks, sampleSize, rng);
@@ -141,7 +145,7 @@ export async function resolvePreviewsForTracks(
         // Re-check inside the worker: a slot reserved before the target was met can otherwise
         // fire a request nobody needs any more.
         if (enough()) return;
-        await acquireSlot();
+        await limiter.acquire();
         if (enough()) return;
 
         try {
@@ -152,7 +156,11 @@ export async function resolvePreviewsForTracks(
           // One failed lookup must not fail the whole playlist scan — it just makes that track
           // unplayable. Throttling is remembered so the UI can say so instead of blaming the playlist.
           failed++;
-          if (err instanceof ItunesLookupError && err.rateLimited) rateLimited = true;
+          if (err instanceof ItunesLookupError && err.rateLimited) {
+            rateLimited = true;
+            // Apple has objected: pace every remaining lookup rather than compounding the burst.
+            limiter.slowDown();
+          }
         }
 
         checked++;

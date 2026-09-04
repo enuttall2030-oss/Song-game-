@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GameTrack } from '../game/types';
 import { resolvePreviewsForTracks } from '../preview/resolvePreviews';
-import { ITUNES_MIN_REQUEST_INTERVAL_MS, createRateLimiter } from '../preview/rateLimiter';
+import { ItunesLookupError } from '../preview/itunesPreview';
+import {
+  ITUNES_MIN_REQUEST_INTERVAL_MS,
+  createAdaptiveRateLimiter,
+  createRateLimiter,
+} from '../preview/rateLimiter';
 
 function track(id: string): GameTrack {
   return { id, title: `Song ${id}`, artist: 'Artist', albumArtUrl: '', previewUrl: '', popularity: 50 };
 }
 
 const tracks = (count: number) => Array.from({ length: count }, (_, i) => track(String(i)));
-const noPacing = { acquireSlot: async () => {} };
+const noPacing = { limiter: { acquire: async () => {}, slowDown: () => {} } };
 
 beforeEach(() => {
   localStorage.clear();
@@ -53,6 +58,82 @@ describe('createRateLimiter', () => {
   });
 });
 
+describe('createAdaptiveRateLimiter', () => {
+  // Fixed pacing taxed the common case to insure against a throttle that usually never happens:
+  // a scan needs ~15 lookups, which already fits inside Apple's allowance.
+  it('does not pace anything until told to slow down', async () => {
+    const sleep = vi.fn(async () => {});
+    const limiter = createAdaptiveRateLimiter(3_000, { now: () => 0, sleep });
+
+    for (let i = 0; i < 10; i++) await limiter.acquire();
+
+    expect(sleep).not.toHaveBeenCalled();
+    expect(limiter.isSlowed()).toBe(false);
+  });
+
+  it('paces every request once it has been slowed', async () => {
+    const waits: number[] = [];
+    const limiter = createAdaptiveRateLimiter(3_000, { now: () => 0, sleep: async (ms) => void waits.push(ms) });
+
+    await limiter.acquire(); // free: not slowed yet
+    limiter.slowDown();
+    await limiter.acquire(); // claims the slot at t=0, so still no wait
+    await limiter.acquire();
+    await limiter.acquire();
+
+    expect(limiter.isSlowed()).toBe(true);
+    expect(waits).toEqual([3_000, 6_000]);
+  });
+});
+
+describe('resolvePreviewsForTracks backs off only when Apple objects', () => {
+  it('slows the scan down after the first throttled lookup', async () => {
+    const slowDown = vi.fn();
+    let call = 0;
+    const lookup = vi.fn(async (title: string) => {
+      if (++call === 2) throw new ItunesLookupError('throttled', true);
+      return `https://a/${title}`;
+    });
+
+    const result = await resolvePreviewsForTracks(tracks(10), {
+      lookup,
+      targetMatches: 10,
+      concurrency: 1,
+      limiter: { acquire: async () => {}, slowDown },
+    });
+
+    expect(result.rateLimited).toBe(true);
+    expect(slowDown).toHaveBeenCalled();
+  });
+
+  it('never slows down a scan that Apple served cleanly', async () => {
+    const slowDown = vi.fn();
+
+    const result = await resolvePreviewsForTracks(tracks(12), {
+      lookup: async (title) => `https://a/${title}`,
+      targetMatches: 12,
+      concurrency: 1,
+      limiter: { acquire: async () => {}, slowDown },
+    });
+
+    expect(result.rateLimited).toBe(false);
+    expect(slowDown).not.toHaveBeenCalled();
+  });
+
+  it('does not slow down for a track that simply has no match', async () => {
+    const slowDown = vi.fn();
+
+    await resolvePreviewsForTracks(tracks(5), {
+      lookup: async () => undefined,
+      targetMatches: 5,
+      concurrency: 1,
+      limiter: { acquire: async () => {}, slowDown },
+    });
+
+    expect(slowDown).not.toHaveBeenCalled();
+  });
+});
+
 describe('resolvePreviewsForTracks stops early', () => {
   // Every avoidable lookup is ~3 seconds of pacing, so pricing 60 tracks to fill a pool of 15 was
   // both slow and the thing that got us throttled in the first place.
@@ -85,13 +166,18 @@ describe('resolvePreviewsForTracks stops early', () => {
   });
 
   it('never sends a request once the target is already met', async () => {
-    const acquireSlot = vi.fn(async () => {});
+    const acquire = vi.fn(async () => {});
     const lookup = vi.fn(async (title: string) => `https://a/${title}`);
 
-    await resolvePreviewsForTracks(tracks(40), { lookup, targetMatches: 6, concurrency: 3, acquireSlot });
+    await resolvePreviewsForTracks(tracks(40), {
+      lookup,
+      targetMatches: 6,
+      concurrency: 3,
+      limiter: { acquire, slowDown: () => {} },
+    });
 
     // A few slots may be reserved by workers already past the check, but nowhere near all 40.
-    expect(acquireSlot.mock.calls.length).toBeLessThan(12);
+    expect(acquire.mock.calls.length).toBeLessThan(12);
   });
 
   it('reports the target it is aiming for, so the UI can show real progress', async () => {
@@ -151,10 +237,15 @@ describe('resolvePreviewsForTracks cache fast path', () => {
     await resolvePreviewsForTracks(tracks(8), { lookup, targetMatches: 8, concurrency: 1, ...noPacing });
     expect(lookup).toHaveBeenCalledTimes(8);
 
-    const acquireSlot = vi.fn(async () => {});
-    const second = await resolvePreviewsForTracks(tracks(8), { lookup, targetMatches: 8, concurrency: 1, acquireSlot });
+    const acquire = vi.fn(async () => {});
+    const second = await resolvePreviewsForTracks(tracks(8), {
+      lookup,
+      targetMatches: 8,
+      concurrency: 1,
+      limiter: { acquire, slowDown: () => {} },
+    });
 
-    expect(acquireSlot).not.toHaveBeenCalled();
+    expect(acquire).not.toHaveBeenCalled();
     expect(lookup).toHaveBeenCalledTimes(8);
     expect(second.matched).toBe(8);
   });

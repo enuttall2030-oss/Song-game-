@@ -38,3 +38,37 @@ export function createRateLimiter(minIntervalMs: number, { now = Date.now, sleep
  * high is a throttle that then blocks the whole scan for far longer than the time saved.
  */
 export const ITUNES_MIN_REQUEST_INTERVAL_MS = 3_200;
+
+export interface AdaptiveRateLimiter {
+  acquire: () => Promise<void>;
+  /** Called when the server has signalled a throttle; slows every subsequent request. */
+  slowDown: () => void;
+  /** Exposed for assertions and progress copy. */
+  isSlowed: () => boolean;
+}
+
+/**
+ * Unpaced until Apple actually objects, then paced for the rest of the scan.
+ *
+ * Fixed pacing was the wrong default: a scan needs only ~15 lookups, which already sits inside
+ * Apple's allowance, so spending ~3 seconds per request made every cold scan take a minute to
+ * insure against a throttle that usually never comes. Going fast and backing off on the first 403
+ * costs one throttled lookup in the bad case and nothing at all in the good one.
+ */
+export function createAdaptiveRateLimiter(
+  slowIntervalMs = ITUNES_MIN_REQUEST_INTERVAL_MS,
+  options: RateLimiterOptions = {},
+): AdaptiveRateLimiter {
+  const paced = createRateLimiter(slowIntervalMs, options);
+  let slowed = false;
+
+  return {
+    acquire: async () => {
+      if (slowed) await paced();
+    },
+    slowDown: () => {
+      slowed = true;
+    },
+    isSlowed: () => slowed,
+  };
+}
